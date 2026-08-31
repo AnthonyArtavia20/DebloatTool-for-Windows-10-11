@@ -1,0 +1,235 @@
+Guía de uso – Windows 11 Debloat & Performance (Enterprise)
+
+Autor: Anthony Artavia
+
+Esta herramienta está diseñada para eliminar componentes de Windows 11 que consumen recursos de forma innecesaria (IA, cloud, tracking, tareas en segundo plano) y optimizar el uso real de CPU, RAM y GPU, sin comprometer estabilidad ni seguridad básica del sistema.
+
+El objetivo es dejar Windows funcionando de forma más parecida a un sistema limpio y eficiente (a un Linux por decirlo así), reduciendo procesos invisibles que normalmente degradan el rendimiento.
+
+----------------------------------------------------------------
+_:_:_:_:_:_:_:_ Descripción de los scripts _:_:_:_:_:_:_:_
+debloat_windows11.ps1
+
+Este script realiza la limpieza base del sistema.
+Se encarga de:
+
+Desactivar y eliminar Windows Copilot
+
+Eliminar Widgets y WebExperience (motor web de Windows)
+
+Desactivar Bing integrado y Cortana, incluyendo la política real que
+saca los resultados web del buscador (DisableWebSearch) — el flag
+BingSearchEnabled por si solo ya no alcanza en builds recientes
+
+Reducir la telemetría
+
+Eliminar aplicaciones basura preinstaladas: Clipchamp, toda la familia
+Xbox, Gaming Services, GamingApp, BingNews/BingWeather, GetHelp,
+Getstarted, Office Hub y Feedback Hub. Antes "Xbox" no atrapaba a
+Gaming Services ni a GamingApp porque sus paquetes no tienen "Xbox"
+en el nombre (Microsoft.GamingServices / Microsoft.GamingApp) — por
+eso Gaming Services seguía vivo en el Administrador de tareas aunque
+el resto de Xbox ya no estuviera. También se corrigió que la
+desinstalación no llevaba -AllUsers, así que no quedaba aplicada
+para todos los perfiles
+
+Desactivar sugerencias y anuncios de Start/lock screen
+(ContentDeliveryManager: apps sugeridas, tips, Spotlight rotativo)
+
+Crear un punto de restauración antes de modificar el sistema
+
+Es el primer paso y establece una base limpia.
+----------------------------------------------------------------
+-> debloat_hardcore.ps1
+
+Este script aplica el "candado" del sistema.
+Su función es evitar que Windows reactive o reinstale componentes de IA y cloud.
+
+Se encarga de:
+
+Desactivar Recall y el historial de actividad
+
+Bloquear Windows Cloud Content, incluyendo Windows Spotlight (los
+anuncios/fotos rotativas de la pantalla de bloqueo)
+
+Desactivar características de consumo y publicidad
+
+Bloquear Bing Chat, Copilot y Web Search a nivel de políticas (HKLM,
+no depende del usuario logueado)
+
+Desactivar tareas ocultas de tracking y experiencia de usuario
+
+Evitar que Windows Update reinstale drivers y componentes innecesarios
+
+Bloquear la reinstalación automática de Xbox/Gaming Services/Clipchamp/
+apps de Bing/apps promocionales sacándolas de los paquetes
+"provisionados" del sistema — esto es lo que antes faltaba: sin esto,
+Windows las vuelve a instalar solas en cuentas nuevas o tras una
+actualización de feature (23H2 -> 24H2, etc), sin importar cuántas
+veces se hayan desinstalado a mano
+
+Este script es lo que mantiene el sistema limpio después de cada actualización.
+----------------------------------------------------------------
+-> performance_mode.ps1
+
+Este script optimiza el uso de recursos del sistema.
+No elimina seguridad ni servicios críticos.
+
+Se encarga de:
+
+Desactivar la compresión de memoria de Windows
+
+Desactivar la combinación de páginas de memoria
+
+Desactivar el core parking de la CPU
+
+Forzar modo de alto rendimiento del procesador
+
+Quitar políticas de ahorro de energía de la GPU
+
+Optimizar el scheduler de Windows para juegos y aplicaciones de alto rendimiento
+
+Esto reduce latencia, microstutter y mejora la estabilidad de FPS y respuesta del sistema.
+----------------------------------------------------------------
+-> lock_after_update.ps1
+
+Este es el "candado rápido" manual.
+Se corre a mano cuando uno está presente en la PC y quiere reaplicar
+de inmediato (sin esperar un reinicio):
+
+Copilot
+
+Windows Cloud Content (incluyendo Spotlight)
+
+Bing, Web Search y la IA integrada
+
+Gaming Services (vuelve a aparecer si se instala un juego de Store o
+Game Pass después del debloat inicial — es una dependencia funcional
+real, no un fallo del script)
+
+No es obligatorio correrlo — install_lock_task.ps1 ya deja esto
+funcionando solo, sin depender de este archivo.
+----------------------------------------------------------------
+-> install_lock_task.ps1
+
+Este es el paso más importante para dejar el trabajo "sellado".
+
+Instala una tarea programada de Windows (Task Scheduler) llamada
+"SystemPolicyMaintenance" que re-aplica el candado (Copilot, Bing +
+Web Search, Cloud Content + Spotlight, y Gaming Services) en CADA
+arranque del equipo, corriendo como SYSTEM.
+
+Lo clave: el comando completo va EMBEBIDO dentro de la propia tarea
+(codificado), no apunta a ningún archivo de esta carpeta. Esto quiere
+decir que, después de correr este script una sola vez, se puede
+borrar TODA la carpeta de la PC — la tarea sigue funcionando sola,
+sin dejar ningún script, ni carpeta, ni rastro de la herramienta.
+
+También corrige un problema de las llaves que van en HKCU (Bing,
+Copilot en búsqueda, sugerencias del cuadro de búsqueda): en vez de
+escribir solo en el perfil de SYSTEM (que no serviría de nada),
+recorre los perfiles de usuario reales de la PC para aplicarlas
+correctamente a quien sea que la use. Ademas, en cada arranque
+vuelve a quitar el paquete de Gaming Services/GamingApp si Windows
+Update o la Store lo reinstalaron solos.
+
+La tarea corre en cada arranque, no solo cuando hubo una actualización
+de Windows — no hay forma confiable de distinguir un reinicio normal
+de uno post-actualización sin depender del Event Log (más frágil). Como
+el comando tarda segundos y es idempotente, no genera ningún problema
+correrlo de más.
+
+Ver, revisar o quitar la tarea en cualquier momento:
+  Get-ScheduledTask -TaskName "SystemPolicyMaintenance" | Get-ScheduledTaskInfo
+  Unregister-ScheduledTask -TaskName "SystemPolicyMaintenance" -Confirm:$false
+----------------------------------------------------------------
+_:_:_:_:_:_:_:_ Limitaciones conocidas _:_:_:_:_:_:_:_
+
+Gaming Services puede reaparecer si más adelante se instala un juego
+de Microsoft Store o Game Pass — es una dependencia real de esos
+juegos (autenticación/logros de Xbox), no algo que el script haya
+hecho mal. Con install_lock_task.ps1 instalado no hace falta
+intervenir a mano: se vuelve a quitar solo en el siguiente arranque.
+Si de verdad no se necesita ningún juego de Store, la eliminación vía
+Appx (lo que hace esta herramienta) es la opción recomendada; existe
+un método más agresivo que borra las claves de servicio de
+GamingServices directamente del registro, pero es innecesario para el
+caso normal y rompe la reinstalación limpia desde la Store si algún
+día se necesita — no está incluido acá a propósito.
+
+Bing / Web Search: Microsoft empezó a probar en builds preview de
+Windows 11 (26H2) un switch nativo en Configuración para esto mismo.
+Todavía no llegó a las versiones estables, así que el método de
+política/registro que usa esta herramienta sigue siendo el que
+funciona hoy — conviene revisar si tu build ya trae el switch nativo
+antes de asumir que hace falta el script.
+----------------------------------------------------------------
+_:_:_:_:_:_:_:_ restore_defaults.ps1 _:_:_:_:_:_:_:_
+
+Revierte la optimización (políticas, telemetría, rendimiento, y quita
+la tarea programada "SystemPolicyMaintenance") dejando el equipo como
+antes de usar la herramienta — CON UNA EXCEPCIÓN A PROPÓSITO: las apps
+ya desinstaladas (Xbox, Gaming Services, Clipchamp, Widgets, apps de
+Bing, promo apps) NO se reinstalan. Es solo reversión de configuración,
+nunca reinstala nada.
+
+Nota honesta: ninguno de los scripts guarda el valor que había ANTES de
+tocar cada clave (no hay snapshot). "Restaurar" acá significa borrar la
+política/valor que este toolkit agregó, para que Windows vuelva a su
+comportamiento por defecto al no encontrar nada configurado. Para
+memoria y energía se usan los comandos oficiales de reset
+(Enable-MMAgent, powercfg -restoredefaultschemes) en vez de un número
+fijo, por la misma razón: no sabemos qué traía el equipo antes de la
+primera corrida, pero sí sabemos cuál es el default de fábrica de
+Windows.
+
+----------------------------------------------------------------
+_:_:_:_:_:_:_:_ launcher.py (interfaz gráfica) _:_:_:_:_:_:_:_
+
+DebloatTool.exe (compilado con build.bat / DebloatTool.spec) da una
+interfaz para no tener que correr los .ps1 a mano:
+
+- Botón principal: "Ejecutar todo automatizado" = run_all.ps1
+- Botón "Ejecutar manualmente..." abre una ventana aparte con cada
+  paso individual (limpieza, candado, rendimiento, instalar candado,
+  re-aplicar candado) — separado del botón principal para no saturar
+  la pantalla
+- Botón "Restaurar configuración original" = restore_defaults.ps1, con
+  una confirmación antes de correr (explica exactamente qué va a
+  revertir y qué NO)
+- "Abrir carpeta de Logs" y "Acerca de" (versión + datos del autor,
+  editables en el diccionario AUTHOR_INFO al inicio de launcher.py)
+
+Los .ps1 quedan embebidos dentro del .exe (ver DebloatTool.spec) y se
+extraen a %LOCALAPPDATA%\DebloatTool en cada arranque del programa —
+ahí también vive Logs/. Ver los comentarios al inicio de launcher.py
+para el detalle de por qué no se ejecuta directo desde la carpeta
+temporal de PyInstaller.
+
+----------------------------------------------------------------
+Cómo usar los scripts:
+
+Siempre ejecutar PowerShell como administrador.
+Primero permitir la ejecución de scripts en esa sesión:
+Set-ExecutionPolicy Bypass -Scope Process -Force
+
+Luego ejecutar .\run_all.ps1 para que corra el orden de abajo automáticamente:
+
+.\debloat_windows11.ps1
+.\debloat_hardcore.ps1
+.\performance_mode.ps1
+.\install_lock_task.ps1
+
+Después reiniciar Windows.
+
+Una vez confirmado que todo quedó bien (revisar la carpeta Logs/ si
+hace falta), se puede borrar toda la carpeta de la PC sin problema —
+el candado sigue funcionando solo en cada arranque futuro gracias a
+la tarea programada.
+
+El sistema queda en un estado equivalente a un Windows 10/11 limpio,
+sin componentes de consumo, sin IA integrada y con un perfil de
+rendimiento mucho más cercano a un sistema optimizado o a un entorno
+Linux en términos de respuesta y eficiencia. Nada de esto detecta la
+versión de Windows por software: funciona en ambas porque las
+políticas y registros que toca son los mismos en Windows 10 y 11.
